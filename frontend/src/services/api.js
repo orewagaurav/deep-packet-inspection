@@ -4,8 +4,12 @@
 
 import axios from 'axios'
 
+// Backend base URL. Configure per-environment via VITE_API_URL (see .env.example);
+// falls back to the current deployment if unset.
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://dpi-tqlz.onrender.com'
+
 const api = axios.create({
-  baseURL: 'https://dpi-tqlz.onrender.com',
+  baseURL: API_BASE_URL,
   timeout: 10000,
   headers: { 'Content-Type': 'application/json' },
 })
