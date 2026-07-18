@@ -10,7 +10,6 @@
     "ship-logs:watch": "node scripts/ship_logs.js --watch",
     "simulate": "node scripts/simulate_traffic.js",
     "simulate:live": "node scripts/simulate_traffic.js --live",
-    "simulate:deploy": "node scripts/simulate_traffic.js --live --url https://dpi-tqlz.onrender.com",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

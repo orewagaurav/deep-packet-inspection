@@ -12,7 +12,8 @@ import { useEffect, useRef, useState } from 'react'
 // ---------------------------------------------------------------------------
 const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ||
-  (import.meta.env.DEV ? 'http://localhost:3000' : 'https://dpi-tqlz.onrender.com')
+  import.meta.env.VITE_API_URL ||
+  'http://localhost:3000'
 
 // ---------------------------------------------------------------------------
 // Singleton socket instance

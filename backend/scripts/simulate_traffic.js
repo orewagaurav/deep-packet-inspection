@@ -5,7 +5,7 @@
 //   node scripts/simulate_traffic.js              → Generate 50 logs
 //   node scripts/simulate_traffic.js --count 200  → Generate 200 logs
 //   node scripts/simulate_traffic.js --live       → Continuous mode (1-3/sec)
-//   node scripts/simulate_traffic.js --live --url https://dpi-tqlz.onrender.com
+//   node scripts/simulate_traffic.js --live --url http://localhost:3000
 // ============================================================================
 
 require("dotenv").config();
