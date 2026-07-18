@@ -1,0 +1,37 @@
+# Build artifacts
+build/
+*.o
+*.out
+compile_commands.json
+.cache/
+
+# Generated engine output
+output.pcap
+output_blocked.pcap
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+frontend/dist/
+
+# Environment
+backend/.env
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Compiled binaries
+dpi_engine
+packet_analyzer
+dpi_logs.json
