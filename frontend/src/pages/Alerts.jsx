@@ -3,32 +3,55 @@ import AlertsTable from '../components/AlertsTable'
 import { getAlerts } from '../services/api'
 import { useSocket, useSocketStatus } from '../services/socket'
 
+const SEVERITIES = ['critical', 'high', 'medium', 'low']
+const ALERT_TYPES = ['port_scan', 'brute_force', 'anomaly', 'policy_violation', 'dns_tunnel']
+
 export default function Alerts() {
   const [data, setData] = useState({ data: [], total: 0 })
   const [page, setPage] = useState(1)
+  const [severity, setSeverity] = useState('')
+  const [alertType, setAlertType] = useState('')
   const [loading, setLoading] = useState(true)
   const limit = 20
   const { connected } = useSocketStatus()
 
   // Initial data hydration
   const fetchAlerts = useCallback(async () => {
+    setLoading(true)
     try {
-      const res = await getAlerts({ page, limit })
+      const params = { page, limit }
+      if (severity) params.severity = severity
+      if (alertType) params.alert_type = alertType
+      const res = await getAlerts(params)
       setData(res)
     } catch (err) {
       console.error('Alerts fetch error', err)
     } finally {
       setLoading(false)
     }
-  }, [page])
+  }, [page, severity, alertType])
 
   useEffect(() => {
     fetchAlerts()
   }, [fetchAlerts])
 
-  // ---- Real-time: prepend new alerts ----
+  // Reset to the first page whenever a filter changes so results stay consistent.
+  const handleSeverityChange = (value) => {
+    setSeverity(value)
+    setPage(1)
+  }
+  const handleTypeChange = (value) => {
+    setAlertType(value)
+    setPage(1)
+  }
+
+  // ---- Real-time: prepend new alerts (only on page 1, honoring active filters) ----
   useSocket('alert_update', (alert) => {
+    if (page !== 1) return
+    if (severity && alert.severity !== severity) return
+    if (alertType && alert.alert_type !== alertType) return
     setData((prev) => ({
+      ...prev,
       total: (prev.total || 0) + 1,
       data: [alert, ...(prev.data || [])].slice(0, limit),
     }))
@@ -53,6 +76,48 @@ export default function Alerts() {
           </div>
         </div>
         <span className="text-sm text-gray-500">{data.total} total alerts</span>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          value={severity}
+          onChange={(e) => handleSeverityChange(e.target.value)}
+          className="px-3 py-1.5 text-sm rounded-lg bg-gray-900 border border-gray-800 text-gray-200 focus:outline-none focus:border-gray-600"
+        >
+          <option value="">All severities</option>
+          {SEVERITIES.map((s) => (
+            <option key={s} value={s}>
+              {s.charAt(0).toUpperCase() + s.slice(1)}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={alertType}
+          onChange={(e) => handleTypeChange(e.target.value)}
+          className="px-3 py-1.5 text-sm rounded-lg bg-gray-900 border border-gray-800 text-gray-200 focus:outline-none focus:border-gray-600"
+        >
+          <option value="">All types</option>
+          {ALERT_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t.replace(/_/g, ' ')}
+            </option>
+          ))}
+        </select>
+
+        {(severity || alertType) && (
+          <button
+            onClick={() => {
+              setSeverity('')
+              setAlertType('')
+              setPage(1)
+            }}
+            className="px-3 py-1.5 text-sm rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {loading ? (

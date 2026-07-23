@@ -61,6 +61,39 @@ router.post("/alerts", async (req, res, next) => {
 });
 
 // --------------------------------------------------------------------------
+// GET /alerts — Query security alerts (with optional filters)
+// --------------------------------------------------------------------------
+router.get("/alerts", async (req, res, next) => {
+  try {
+    const db = getDB();
+    const { src_ip, alert_type, severity, limit = 100, page = 1 } = req.query;
+
+    const filter = {};
+    if (src_ip) filter.src_ip = src_ip;
+    if (alert_type) filter.alert_type = alert_type;
+    if (severity) filter.severity = severity;
+
+    const pageSize = Math.min(Number(limit) || 100, 1000);
+    const skip = (Math.max(Number(page) || 1, 1) - 1) * pageSize;
+
+    const [docs, total] = await Promise.all([
+      db
+        .collection("security_alerts")
+        .find(filter)
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(pageSize)
+        .toArray(),
+      db.collection("security_alerts").countDocuments(filter),
+    ]);
+
+    res.json({ total, page: Math.max(Number(page) || 1, 1), limit: pageSize, data: docs });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --------------------------------------------------------------------------
 // GET /traffic — Query traffic logs (with optional filters)
 // --------------------------------------------------------------------------
 router.get("/traffic", async (req, res, next) => {
