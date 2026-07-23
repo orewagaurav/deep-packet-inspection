@@ -65,18 +65,26 @@ public:
     void enqueue(const std::string& json_line);
 
     // -----------------------------------------------------------------------
+    // Enqueue a single JSON security-alert string (thread-safe).
+    // Delivered to the backend POST /alerts endpoint by the same flush thread.
+    // -----------------------------------------------------------------------
+    void enqueueAlert(const std::string& json_line);
+
+    // -----------------------------------------------------------------------
     // Statistics
     // -----------------------------------------------------------------------
     uint64_t sentCount()   const { return sent_.load(std::memory_order_relaxed); }
     uint64_t failedCount() const { return failed_.load(std::memory_order_relaxed); }
 
 private:
-    std::string endpoint_;       // full URL: backend_url + "/logs"
+    std::string endpoint_;        // full URL: backend_url + "/logs"
+    std::string alert_endpoint_;  // full URL: backend_url + "/alerts"
     int batch_size_;
     int flush_interval_ms_;
 
-    // Thread-safe log buffer
+    // Thread-safe buffers (both guarded by buffer_mutex_)
     std::queue<std::string> buffer_;
+    std::queue<std::string> alert_buffer_;
     std::mutex buffer_mutex_;
     std::condition_variable buffer_cv_;
 
@@ -98,10 +106,10 @@ private:
     void flushLoop();
 
     // -----------------------------------------------------------------------
-    // Send a single JSON log to the backend via HTTP POST.
+    // POST a single JSON body to a backend URL via libcurl.
     // Returns true on success (HTTP 2xx).
     // -----------------------------------------------------------------------
-    bool sendLog(const std::string& json_body);
+    bool postJson(const std::string& url, const std::string& json_body);
 
     // -----------------------------------------------------------------------
     // Drain: flush all remaining buffered logs (called during stop()).

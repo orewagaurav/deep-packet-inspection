@@ -9,10 +9,12 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js'
+import Panel from './Panel'
+import { palette, chartAxis, chartTooltip } from '../theme'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
 
-export default function TrafficChart({ data = [] }) {
+export default function TrafficChart({ data = [], emptyHint }) {
   const chartData = {
     labels: data.map((d) =>
       new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -21,20 +23,24 @@ export default function TrafficChart({ data = [] }) {
       {
         label: 'Bytes',
         data: data.map((d) => d.total_bytes),
-        borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59,130,246,0.15)',
+        borderColor: palette.accent,
+        backgroundColor: 'rgba(99,102,241,0.14)',
         fill: true,
         tension: 0.35,
-        pointRadius: 2,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        borderWidth: 2,
       },
       {
         label: 'Packets',
         data: data.map((d) => d.total_packets),
-        borderColor: '#10b981',
-        backgroundColor: 'rgba(16,185,129,0.1)',
+        borderColor: palette.low,
+        backgroundColor: 'rgba(56,189,248,0.08)',
         fill: true,
         tension: 0.35,
-        pointRadius: 2,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        borderWidth: 2,
         yAxisID: 'y1',
       },
     ],
@@ -45,40 +51,59 @@ export default function TrafficChart({ data = [] }) {
     maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
-      legend: { labels: { color: '#9ca3af', font: { size: 12 } } },
-      tooltip: { backgroundColor: '#1f2937', titleColor: '#f3f4f6', bodyColor: '#d1d5db' },
+      legend: {
+        align: 'end',
+        labels: { color: palette.muted, boxWidth: 10, boxHeight: 10, usePointStyle: true, font: { size: 12 } },
+      },
+      tooltip: { ...chartTooltip, usePointStyle: true },
     },
     scales: {
-      x: { ticks: { color: '#6b7280' }, grid: { color: '#1f2937' } },
+      x: {
+        ticks: { color: chartAxis.tick, maxRotation: 0, font: { size: 11 } },
+        grid: { color: chartAxis.grid, drawTicks: false },
+        border: { display: false },
+      },
       y: {
         type: 'linear',
         position: 'left',
-        ticks: { color: '#3b82f6' },
-        grid: { color: '#1f2937' },
-        title: { display: true, text: 'Bytes', color: '#3b82f6' },
+        ticks: { color: chartAxis.tick, font: { size: 11 } },
+        grid: { color: chartAxis.grid, drawTicks: false },
+        border: { display: false },
       },
       y1: {
         type: 'linear',
         position: 'right',
-        ticks: { color: '#10b981' },
+        ticks: { color: chartAxis.tick, font: { size: 11 } },
         grid: { drawOnChartArea: false },
-        title: { display: true, text: 'Packets', color: '#10b981' },
+        border: { display: false },
       },
     },
   }
 
   return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-      <h3 className="text-sm font-semibold text-gray-300 mb-4">Traffic Volume</h3>
+    <Panel title="Traffic Volume">
       <div className="h-72">
-        {data.length > 0 ? (
+        {data.length >= 2 ? (
           <Line data={chartData} options={options} />
         ) : (
-          <div className="flex items-center justify-center h-full text-gray-600">
-            No traffic data yet
-          </div>
+          <EmptyState
+            hint={
+              data.length === 1
+                ? 'Only one interval of data so far — the trend line fills in as more traffic is captured over time.'
+                : emptyHint || 'No traffic in the selected range.'
+            }
+          />
         )}
       </div>
+    </Panel>
+  )
+}
+
+function EmptyState({ hint }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
+      <p className="text-sm text-muted">No data to display</p>
+      <p className="max-w-xs text-xs text-faint">{hint}</p>
     </div>
   )
 }

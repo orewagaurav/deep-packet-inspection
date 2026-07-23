@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from 'react'
 const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ||
   import.meta.env.VITE_API_URL ||
-  'http://localhost:3000'
+  'http://localhost:8000'
 
 // ---------------------------------------------------------------------------
 // Singleton socket instance

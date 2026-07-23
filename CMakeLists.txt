@@ -20,6 +20,7 @@ set(DPI_ENGINE_SOURCES
     src/types.cpp
     src/live_capture.cpp
     src/log_shipper.cpp
+    src/threat_detector.cpp
 )
 
 # Header files location

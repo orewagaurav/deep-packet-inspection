@@ -3,26 +3,37 @@ import StatCard from '../components/StatCard'
 import TrafficChart from '../components/TrafficChart'
 import DomainTable from '../components/DomainTable'
 import ApplicationChart from '../components/ApplicationChart'
-import AlertsTable from '../components/AlertsTable'
+import PageHeader, { fieldClass } from '../components/PageHeader'
 import { getStats, getTopDomains, getTopApplications, getTrafficVolume } from '../services/api'
-import { useSocket, useSocketStatus } from '../services/socket'
+import { useSocket } from '../services/socket'
+
+const RANGES = [
+  { v: 1, l: 'Last 1h' },
+  { v: 6, l: 'Last 6h' },
+  { v: 24, l: 'Last 24h' },
+  { v: 72, l: 'Last 3d' },
+  { v: 168, l: 'Last 7d' },
+]
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [domains, setDomains] = useState([])
   const [apps, setApps] = useState([])
   const [volume, setVolume] = useState([])
+  const [hours, setHours] = useState(24)
   const [loading, setLoading] = useState(true)
-  const { connected } = useSocketStatus()
 
-  // Initial data hydration via REST
+  const rangeLabel = (RANGES.find((r) => r.v === hours)?.l || `Last ${hours}h`)
+    .replace('Last ', '')
+    .toLowerCase()
+
   const fetchAll = useCallback(async () => {
     try {
       const [s, d, a, v] = await Promise.all([
         getStats(),
-        getTopDomains(),
-        getTopApplications(),
-        getTrafficVolume(),
+        getTopDomains({ hours }),
+        getTopApplications({ hours }),
+        getTrafficVolume({ hours }),
       ])
       setStats(s)
       setDomains(d.data || [])
@@ -33,144 +44,149 @@ export default function Dashboard() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [hours])
 
   useEffect(() => {
     fetchAll()
   }, [fetchAll])
 
   // ---- Real-time WebSocket updates ----
-
-  // traffic_update → increment stats + update domain/app lists
   useSocket('traffic_update', (data) => {
-    // Update summary stats
-    setStats((prev) => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        total_packets: (prev.total_packets || 0) + (data.packets || 1),
-        total_bytes: (prev.total_bytes || 0) + (data.bytes || 0),
-      }
-    })
-
-    // Update domain list if this log has a domain
+    setStats((prev) =>
+      prev
+        ? {
+            ...prev,
+            total_packets: (prev.total_packets || 0) + (data.packets || 1),
+            total_bytes: (prev.total_bytes || 0) + (data.bytes || 0),
+          }
+        : prev
+    )
     if (data.domain) {
       setDomains((prev) => {
         const existing = prev.find((d) => d.domain === data.domain)
         if (existing) {
           return prev.map((d) =>
             d.domain === data.domain
-              ? { ...d, count: (d.count || d.request_count || 0) + 1, bytes: (d.bytes || 0) + (data.bytes || 0) }
+              ? {
+                  ...d,
+                  request_count: (d.request_count || d.count || 0) + 1,
+                  total_bytes: (d.total_bytes || 0) + (data.bytes || 0),
+                }
               : d
           )
         }
-        return [{ domain: data.domain, count: 1, request_count: 1, bytes: data.bytes || 0 }, ...prev].slice(0, 10)
+        return [
+          { domain: data.domain, request_count: 1, total_bytes: data.bytes || 0, unique_sources: 1 },
+          ...prev,
+        ].slice(0, 10)
       })
     }
-
-    // Update application list
     if (data.application && data.application !== 'Unknown') {
       setApps((prev) => {
         const existing = prev.find((a) => a.application === data.application)
         if (existing) {
           return prev.map((a) =>
             a.application === data.application
-              ? { ...a, count: (a.count || a.request_count || 0) + 1, bytes: (a.bytes || 0) + (data.bytes || 0) }
+              ? { ...a, total_bytes: (a.total_bytes || 0) + (data.bytes || 0) }
               : a
           )
         }
-        return [{ application: data.application, count: 1, request_count: 1, bytes: data.bytes || 0 }, ...prev].slice(0, 10)
+        return [{ application: data.application, total_bytes: data.bytes || 0 }, ...prev].slice(0, 10)
       })
     }
   })
 
-  // blocked_event → increment blocked count
-  useSocket('blocked_event', () => {
-    setStats((prev) => {
-      if (!prev) return prev
-      return { ...prev, blocked_traffic_count: (prev.blocked_traffic_count || 0) + 1 }
-    })
-  })
+  useSocket('blocked_event', () =>
+    setStats((prev) =>
+      prev ? { ...prev, blocked_traffic_count: (prev.blocked_traffic_count || 0) + 1 } : prev
+    )
+  )
+  useSocket('alert_update', () =>
+    setStats((prev) =>
+      prev ? { ...prev, security_alerts_count: (prev.security_alerts_count || 0) + 1 } : prev
+    )
+  )
 
-  // alert_update → increment alerts count
-  useSocket('alert_update', () => {
-    setStats((prev) => {
-      if (!prev) return prev
-      return { ...prev, security_alerts_count: (prev.security_alerts_count || 0) + 1 }
-    })
-  })
+  const packetsSeries = volume.map((v) => v.total_packets)
+  const bytesSeries = volume.map((v) => v.total_bytes)
+  const blockedSeries = volume.map((v) => v.blocked_count)
+  const emptyHint = `No traffic in the ${rangeLabel} window. Your most recent capture may be older — widen the range above.`
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="animate-spin h-8 w-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+      <div className="flex h-96 items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-        <div className="flex items-center gap-2">
-          <span
-            className={`inline-block h-2 w-2 rounded-full ${
-              connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
-            }`}
-          />
-          <span className="text-xs text-gray-500">
-            {connected ? 'Live' : 'Disconnected'}
-          </span>
-        </div>
-      </div>
+    <div className="space-y-5">
+      <PageHeader title="Dashboard" subtitle="Real-time deep packet inspection overview">
+        <select value={hours} onChange={(e) => setHours(Number(e.target.value))} className={fieldClass}>
+          {RANGES.map((r) => (
+            <option key={r.v} value={r.v}>
+              {r.l}
+            </option>
+          ))}
+        </select>
+      </PageHeader>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      {/* Stat tiles */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
           title="Total Packets"
           value={stats?.total_packets?.toLocaleString()}
-          icon="📦"
-          color="blue"
+          hint="all-time"
+          icon="package"
+          tone="indigo"
+          spark={packetsSeries}
         />
         <StatCard
           title="Total Bytes"
           value={formatBytes(stats?.total_bytes)}
-          icon="📡"
-          color="cyan"
+          hint="all-time"
+          icon="database"
+          tone="sky"
+          spark={bytesSeries}
         />
         <StatCard
           title="Top Domains"
           value={domains.length}
-          icon="🌐"
-          color="green"
+          hint={`last ${rangeLabel}`}
+          icon="globe"
+          tone="indigo"
         />
         <StatCard
-          title="Top Apps"
+          title="Applications"
           value={apps.length}
-          icon="📱"
-          color="purple"
+          hint={`last ${rangeLabel}`}
+          icon="layers"
+          tone="sky"
         />
         <StatCard
           title="Blocked"
           value={stats?.blocked_traffic_count?.toLocaleString()}
-          icon="🚫"
-          color="red"
+          hint="all-time"
+          icon="ban"
+          tone="orange"
+          spark={blockedSeries}
         />
         <StatCard
           title="Alerts"
           value={stats?.security_alerts_count?.toLocaleString()}
-          icon="🔔"
-          color="yellow"
+          hint="all-time"
+          icon="alert"
+          tone="red"
         />
       </div>
 
-      {/* Traffic volume chart */}
-      <TrafficChart data={volume} />
+      {/* Traffic volume */}
+      <TrafficChart data={volume} emptyHint={emptyHint} />
 
-      {/* Two-column: app chart + domain table */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ApplicationChart apps={apps} />
+      {/* App distribution + top domains */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <ApplicationChart apps={apps} emptyHint={emptyHint} />
         <DomainTable domains={domains} />
       </div>
     </div>

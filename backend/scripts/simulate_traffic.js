@@ -1,11 +1,16 @@
 // ============================================================================
-// Traffic Simulator — Generate realistic demo traffic data
+// Traffic Simulator — Generate realistic demo TRAFFIC data
 // ============================================================================
 // Usage:
 //   node scripts/simulate_traffic.js              → Generate 50 logs
 //   node scripts/simulate_traffic.js --count 200  → Generate 200 logs
 //   node scripts/simulate_traffic.js --live       → Continuous mode (1-3/sec)
 //   node scripts/simulate_traffic.js --live --url http://localhost:3000
+//
+// NOTE: This seeds TRAFFIC only. Security alerts are NOT simulated here —
+// they are raised by the C++ engine's real ThreatDetector (port scans, DNS
+// tunneling, data exfil) and shipped to POST /alerts. Run the engine live
+// (`sudo ./dpi_engine --interface <iface>`) to populate the Alerts view.
 // ============================================================================
 
 require("dotenv").config();
@@ -102,28 +107,6 @@ async function sendLog(baseUrl, log) {
   }
 }
 
-async function sendAlert(baseUrl) {
-  const alertTypes = ["port_scan", "brute_force", "anomaly", "policy_violation", "dns_tunnel"];
-  const severities = ["low", "medium", "medium", "high", "critical"];
-
-  const alert = {
-    src_ip: pick(SRC_IPS),
-    alert_type: pick(alertTypes),
-    severity: pick(severities),
-    description: `Suspicious activity detected from ${pick(SRC_IPS)}`,
-  };
-
-  try {
-    await axios.post(`${baseUrl}/alerts`, alert, {
-      headers: { "Content-Type": "application/json" },
-      timeout: 5000,
-    });
-    return true;
-  } catch (err) {
-    return false;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -146,7 +129,6 @@ async function main() {
     console.log("   Press Ctrl+C to stop\n");
     let sent = 0;
     let failed = 0;
-    let alertsSent = 0;
 
     const interval = setInterval(async () => {
       const batchSize = randInt(1, 3);
@@ -155,22 +137,16 @@ async function main() {
         const ok = await sendLog(baseUrl, log);
         if (ok) {
           sent++;
-          process.stdout.write(`\r   📡 Sent: ${sent}  Failed: ${failed}  Alerts: ${alertsSent}  [${log.application}]     `);
+          process.stdout.write(`\r   📡 Sent: ${sent}  Failed: ${failed}  [${log.application}]     `);
         } else {
           failed++;
         }
-      }
-
-      // Occasionally send an alert (10% chance per tick)
-      if (Math.random() < 0.1) {
-        const ok = await sendAlert(baseUrl);
-        if (ok) alertsSent++;
       }
     }, randInt(500, 1500));
 
     process.on("SIGINT", () => {
       clearInterval(interval);
-      console.log(`\n\n   ✅ Done: ${sent} sent, ${failed} failed, ${alertsSent} alerts\n`);
+      console.log(`\n\n   ✅ Done: ${sent} sent, ${failed} failed\n`);
       process.exit(0);
     });
   } else {
@@ -189,15 +165,7 @@ async function main() {
       }
     }
 
-    // Send a few alerts too
-    const alertCount = Math.ceil(count * 0.1);
-    let alertsSent = 0;
-    for (let i = 0; i < alertCount; i++) {
-      const ok = await sendAlert(baseUrl);
-      if (ok) alertsSent++;
-    }
-
-    console.log(`\n\n   ✅ Done: ${sent} logs sent, ${failed} failed, ${alertsSent} alerts\n`);
+    console.log(`\n\n   ✅ Done: ${sent} logs sent, ${failed} failed\n`);
   }
 }
 

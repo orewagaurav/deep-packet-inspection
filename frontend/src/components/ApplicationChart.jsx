@@ -1,22 +1,20 @@
 import { Doughnut } from 'react-chartjs-2'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
+import Panel from './Panel'
+import { palette, seriesColors, chartTooltip } from '../theme'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
-const COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#a855f7',
-]
-
-export default function ApplicationChart({ apps = [] }) {
+export default function ApplicationChart({ apps = [], emptyHint }) {
   const chartData = {
     labels: apps.map((a) => a.application),
     datasets: [
       {
         data: apps.map((a) => a.total_bytes),
-        backgroundColor: COLORS.slice(0, apps.length),
-        borderColor: '#111827',
-        borderWidth: 2,
+        backgroundColor: seriesColors.slice(0, apps.length),
+        borderColor: palette.panel,
+        borderWidth: 3,
+        hoverOffset: 6,
       },
     ],
   }
@@ -24,38 +22,42 @@ export default function ApplicationChart({ apps = [] }) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    cutout: '62%',
     plugins: {
       legend: {
         position: 'right',
-        labels: { color: '#9ca3af', font: { size: 12 }, padding: 12 },
+        labels: {
+          color: palette.muted,
+          font: { size: 12 },
+          padding: 12,
+          usePointStyle: true,
+          pointStyle: 'circle',
+          boxWidth: 8,
+          boxHeight: 8,
+        },
       },
       tooltip: {
-        backgroundColor: '#1f2937',
-        titleColor: '#f3f4f6',
-        bodyColor: '#d1d5db',
-        callbacks: {
-          label: (ctx) => {
-            const bytes = ctx.parsed
-            return ` ${ctx.label}: ${formatBytes(bytes)}`
-          },
-        },
+        ...chartTooltip,
+        callbacks: { label: (ctx) => ` ${ctx.label}: ${formatBytes(ctx.parsed)}` },
       },
     },
   }
 
   return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-      <h3 className="text-sm font-semibold text-gray-300 mb-4">Application Distribution</h3>
+    <Panel title="Application Distribution">
       <div className="h-72">
         {apps.length > 0 ? (
           <Doughnut data={chartData} options={options} />
         ) : (
-          <div className="flex items-center justify-center h-full text-gray-600">
-            No application data yet
+          <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
+            <p className="text-sm text-muted">No data to display</p>
+            <p className="max-w-xs text-xs text-faint">
+              {emptyHint || 'No classified applications in the selected range.'}
+            </p>
           </div>
         )}
       </div>
-    </div>
+    </Panel>
   )
 }
 

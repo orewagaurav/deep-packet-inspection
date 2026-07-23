@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import AlertsTable from '../components/AlertsTable'
+import PageHeader, { fieldClass } from '../components/PageHeader'
 import { getAlerts } from '../services/api'
-import { useSocket, useSocketStatus } from '../services/socket'
+import { useSocket } from '../services/socket'
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low']
-const ALERT_TYPES = ['port_scan', 'brute_force', 'anomaly', 'policy_violation', 'dns_tunnel']
+// Real detector types first, then legacy types that may exist in older data.
+const ALERT_TYPES = ['port_scan', 'dns_tunnel', 'data_exfil', 'anomaly', 'policy_violation', 'brute_force']
 
 export default function Alerts() {
   const [data, setData] = useState({ data: [], total: 0 })
@@ -13,9 +15,7 @@ export default function Alerts() {
   const [alertType, setAlertType] = useState('')
   const [loading, setLoading] = useState(true)
   const limit = 20
-  const { connected } = useSocketStatus()
 
-  // Initial data hydration
   const fetchAlerts = useCallback(async () => {
     setLoading(true)
     try {
@@ -58,46 +58,23 @@ export default function Alerts() {
   })
 
   const totalPages = Math.ceil((data.total || 0) / limit)
+  const hasFilter = severity || alertType
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-white">Security Alerts</h1>
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`inline-block h-2 w-2 rounded-full ${
-                connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
-              }`}
-            />
-            <span className="text-xs text-gray-500">
-              {connected ? 'Live' : 'Offline'}
-            </span>
-          </div>
-        </div>
-        <span className="text-sm text-gray-500">{data.total} total alerts</span>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <select
-          value={severity}
-          onChange={(e) => handleSeverityChange(e.target.value)}
-          className="px-3 py-1.5 text-sm rounded-lg bg-gray-900 border border-gray-800 text-gray-200 focus:outline-none focus:border-gray-600"
-        >
+    <div className="space-y-5">
+      <PageHeader
+        title="Security Alerts"
+        subtitle={`${(data.total || 0).toLocaleString()} alert${data.total === 1 ? '' : 's'} from the threat detector`}
+      >
+        <select value={severity} onChange={(e) => handleSeverityChange(e.target.value)} className={fieldClass}>
           <option value="">All severities</option>
           {SEVERITIES.map((s) => (
-            <option key={s} value={s}>
+            <option key={s} value={s} className="capitalize">
               {s.charAt(0).toUpperCase() + s.slice(1)}
             </option>
           ))}
         </select>
-
-        <select
-          value={alertType}
-          onChange={(e) => handleTypeChange(e.target.value)}
-          className="px-3 py-1.5 text-sm rounded-lg bg-gray-900 border border-gray-800 text-gray-200 focus:outline-none focus:border-gray-600"
-        >
+        <select value={alertType} onChange={(e) => handleTypeChange(e.target.value)} className={fieldClass}>
           <option value="">All types</option>
           {ALERT_TYPES.map((t) => (
             <option key={t} value={t}>
@@ -105,52 +82,55 @@ export default function Alerts() {
             </option>
           ))}
         </select>
-
-        {(severity || alertType) && (
+        {hasFilter && (
           <button
             onClick={() => {
               setSeverity('')
               setAlertType('')
               setPage(1)
             }}
-            className="px-3 py-1.5 text-sm rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700"
+            className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent/40 hover:text-ink"
           >
-            Clear filters
+            Clear
           </button>
         )}
-      </div>
+      </PageHeader>
 
       {loading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="animate-spin h-8 w-8 border-2 border-yellow-500 border-t-transparent rounded-full" />
+        <div className="flex h-48 items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
         </div>
       ) : (
         <>
-          <AlertsTable alerts={data.data || []} />
+          <AlertsTable alerts={data.data || []} title={hasFilter ? 'Filtered Alerts' : 'Recent Alerts'} />
 
           {totalPages > 1 && (
             <div className="flex items-center justify-between">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="px-3 py-1 text-sm rounded bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
+              <PageBtn disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                 ← Prev
-              </button>
-              <span className="text-sm text-gray-500">
+              </PageBtn>
+              <span className="text-sm text-muted">
                 Page {page} of {totalPages}
               </span>
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="px-3 py-1 text-sm rounded bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
+              <PageBtn disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
                 Next →
-              </button>
+              </PageBtn>
             </div>
           )}
         </>
       )}
     </div>
+  )
+}
+
+function PageBtn({ disabled, onClick, children }) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      className="rounded-lg border border-edge bg-panel px-3 py-1 text-sm text-muted transition-colors hover:border-accent/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {children}
+    </button>
   )
 }

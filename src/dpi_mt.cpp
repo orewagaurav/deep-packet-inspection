@@ -31,6 +31,7 @@
 #include "types.h"
 #include "live_capture.h"
 #include "log_shipper.h"
+#include "threat_detector.h"
 
 using namespace PacketAnalyzer;
 using namespace DPI;
@@ -241,10 +242,10 @@ class FastPath {
 public:
     FastPath(int id, Rules* rules, Stats* stats, TSQueue<Packet>* output_queue,
              std::ofstream* json_log = nullptr, std::mutex* json_log_mutex = nullptr,
-             LogShipper* log_shipper = nullptr)
+             LogShipper* log_shipper = nullptr, ThreatDetector* detector = nullptr)
         : id_(id), rules_(rules), stats_(stats), output_queue_(output_queue),
           json_log_(json_log), json_log_mutex_(json_log_mutex),
-          log_shipper_(log_shipper) {}
+          log_shipper_(log_shipper), detector_(detector) {}
     
     void start() {
         running_ = true;
@@ -271,7 +272,8 @@ private:
     std::ofstream* json_log_;
     std::mutex* json_log_mutex_;
     LogShipper* log_shipper_;
-    
+    ThreatDetector* detector_;
+
     std::atomic<bool> running_{false};
     std::thread thread_;
     std::atomic<uint64_t> processed_{0};
@@ -304,7 +306,29 @@ private:
             
             // Record stats
             stats_->recordApp(flow.app_type, flow.sni);
-            
+
+            // ---- Threat detection (heuristic IDS) ----
+            if (detector_) {
+                // Port scan: TCP SYN without ACK = a connection attempt.
+                if (pkt.tuple.protocol == 6 &&
+                    (pkt.tcp_flags & 0x02) && !(pkt.tcp_flags & 0x10)) {
+                    detector_->onConnectionAttempt(pkt.tuple.src_ip, pkt.tuple.dst_port);
+                }
+
+                // Data exfil: cumulative byte volume per source.
+                detector_->onBytes(pkt.tuple.src_ip, pkt.data.size());
+
+                // DNS tunneling: inspect the query name of DNS requests.
+                if (pkt.tuple.dst_port == 53 &&
+                    pkt.payload_offset < pkt.data.size() &&
+                    pkt.payload_length <= pkt.data.size() - pkt.payload_offset &&
+                    pkt.payload_length > 12) {
+                    const uint8_t* payload = pkt.data.data() + pkt.payload_offset;
+                    auto qname = ThreatDetector::extractDnsQName(payload, pkt.payload_length);
+                    if (qname) detector_->onDnsQuery(pkt.tuple.src_ip, *qname);
+                }
+            }
+
             // Forward or drop
             std::string action_str;
             if (flow.blocked) {
@@ -650,6 +674,7 @@ private:
     std::ofstream json_log_;
     std::mutex json_log_mutex_;
     std::unique_ptr<LogShipper> log_shipper_;
+    std::unique_ptr<ThreatDetector> detector_;
 
     // =========================================================================
     // createPipeline() — build FP and LB threads
@@ -660,13 +685,16 @@ private:
         fps_.clear();
         lbs_.clear();
 
+        // Shared threat detector (alerts shipped via the same backend connection)
+        detector_ = std::make_unique<ThreatDetector>(shipper);
+
         // Create FP threads
         for (int i = 0; i < total_fps; i++) {
             fps_.push_back(std::make_unique<FastPath>(
                 i, &rules_, &stats_, &output_queue_,
                 json_log_.is_open() ? &json_log_ : nullptr,
                 &json_log_mutex_,
-                shipper));
+                shipper, detector_.get()));
         }
         
         // Create LB threads, each managing a subset of FPs
@@ -770,6 +798,7 @@ private:
         std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
         std::cout << "║ Forwarded:          " << std::setw(12) << stats_.forwarded.load() << "                           ║\n";
         std::cout << "║ Dropped:            " << std::setw(12) << stats_.dropped.load() << "                           ║\n";
+        std::cout << "║ Threat Alerts:      " << std::setw(12) << (detector_ ? detector_->alertsRaised() : 0) << "                           ║\n";
         
         // Thread stats
         std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
