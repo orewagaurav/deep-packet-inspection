@@ -5,6 +5,7 @@ import Traffic from './pages/Traffic'
 import Blocked from './pages/Blocked'
 import Alerts from './pages/Alerts'
 import Rules from './pages/Rules'
+import Geo from './pages/Geo'
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
             <Route path="/blocked" element={<Blocked />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/rules" element={<Rules />} />
+            <Route path="/geo" element={<Geo />} />
           </Routes>
         </div>
       </main>

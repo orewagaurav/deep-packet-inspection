@@ -3,8 +3,18 @@
 // ============================================================================
 
 const winston = require("winston");
+const geoip = require("geoip-lite");
 const { getDB } = require("../config/database");
 const { emitEvent } = require("./socketManager");
+
+// Resolve a destination IP to a coarse location (offline MaxMind GeoLite data).
+// Returns null for private / unroutable / unknown IPs.
+function geoLookup(ip) {
+  if (!ip) return null;
+  const g = geoip.lookup(ip);
+  if (!g || !Array.isArray(g.ll)) return null;
+  return { country: g.country || "", city: g.city || "", lat: g.ll[0], lng: g.ll[1] };
+}
 
 // ---------------------------------------------------------------------------
 // Winston logger (console + file)
@@ -69,6 +79,7 @@ async function logTraffic({
     bytes: Number(bytes) || 0,
     packets: Number(packets) || 0,
     action,
+    geo: geoLookup(dest_ip),
   };
 
   const result = await db.collection("traffic_logs").insertOne(doc);

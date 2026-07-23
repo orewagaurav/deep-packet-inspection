@@ -42,6 +42,9 @@ export const getTrafficVolume = (params = {}) =>
 export const getBlockedAnalytics = (params = {}) =>
   api.get('/analytics/blocked-events', { params }).then((r) => r.data)
 
+export const getGeo = (params = {}) =>
+  api.get('/analytics/geo', { params }).then((r) => r.data)
+
 // ---- Block rules (control plane) ----
 export const getRules = () => api.get('/rules').then((r) => r.data)
 

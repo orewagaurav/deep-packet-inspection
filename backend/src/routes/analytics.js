@@ -244,4 +244,51 @@ router.get("/blocked-events", async (req, res, next) => {
   }
 });
 
+// --------------------------------------------------------------------------
+// GET /analytics/geo
+// Traffic grouped by destination location (for the world map).
+// Query params: hours (default 24), limit (default 500)
+// --------------------------------------------------------------------------
+router.get("/geo", async (req, res, next) => {
+  try {
+    const db = getDB();
+    const hours = Number(req.query.hours) || 24;
+    const limit = Math.min(Number(req.query.limit) || 500, 2000);
+    const since = new Date(Date.now() - hours * 3600 * 1000);
+
+    const results = await db
+      .collection("traffic_logs")
+      .aggregate([
+        { $match: { timestamp: { $gte: since }, "geo.lat": { $exists: true, $ne: null } } },
+        {
+          $group: {
+            _id: { country: "$geo.country", city: "$geo.city" },
+            lat: { $first: "$geo.lat" },
+            lng: { $first: "$geo.lng" },
+            count: { $sum: 1 },
+            bytes: { $sum: "$bytes" },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            country: "$_id.country",
+            city: "$_id.city",
+            lat: 1,
+            lng: 1,
+            count: 1,
+            bytes: 1,
+          },
+        },
+        { $sort: { count: -1 } },
+        { $limit: limit },
+      ])
+      .toArray();
+
+    res.json({ time_window_hours: hours, data: results });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

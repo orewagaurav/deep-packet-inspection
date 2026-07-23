@@ -4,6 +4,7 @@ import Icon from './Icon'
 const links = [
   { to: '/', label: 'Dashboard', icon: 'dashboard' },
   { to: '/traffic', label: 'Traffic Analytics', icon: 'activity' },
+  { to: '/geo', label: 'World Map', icon: 'globe' },
   { to: '/blocked', label: 'Blocked Events', icon: 'ban' },
   { to: '/alerts', label: 'Security Alerts', icon: 'alert' },
   { to: '/rules', label: 'Block Rules', icon: 'sliders' },
