@@ -43,10 +43,10 @@ export default function WorldMap({ points = [] }) {
     <div className="relative">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="World traffic map">
         {/* ocean */}
-        <path d={spherePath} fill="#0c1226" stroke="#1b2238" strokeWidth={0.5} />
+        <path d={spherePath} fill="#0a1120" stroke="#1a2437" strokeWidth={0.5} />
         {/* countries */}
         {countries.map((c, i) => (
-          <path key={i} d={pathGen(c) || undefined} fill="#1a2138" stroke="#2a3352" strokeWidth={0.4} />
+          <path key={i} d={pathGen(c) || undefined} fill="#172137" stroke="#273449" strokeWidth={0.4} />
         ))}
         {/* destination markers */}
         {dots.map((p, i) => (
@@ -56,8 +56,8 @@ export default function WorldMap({ points = [] }) {
             onMouseLeave={() => setHover(null)}
             className="cursor-pointer"
           >
-            <circle cx={p.x} cy={p.y} r={p.r} fill="rgba(99,102,241,0.28)" stroke="#818cf8" strokeWidth={0.6} />
-            <circle cx={p.x} cy={p.y} r={1.6} fill="#c7d2fe" />
+            <circle cx={p.x} cy={p.y} r={p.r} fill="rgba(59,130,246,0.28)" stroke="#60a5fa" strokeWidth={0.6} />
+            <circle cx={p.x} cy={p.y} r={1.6} fill="#bfdbfe" />
           </g>
         ))}
       </svg>

@@ -7,7 +7,7 @@ export default function Sparkline({
   data = [],
   width = 104,
   height = 30,
-  color = '#6366f1',
+  color = '#3b82f6',
   className = '',
 }) {
   const pts = (data || []).filter((n) => Number.isFinite(n))

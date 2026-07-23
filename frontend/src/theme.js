@@ -4,41 +4,41 @@
 // ============================================================================
 
 export const palette = {
-  canvas: '#0b1020',
-  panel: '#141a2e',
-  edge: '#232c46',
-  ink: '#d7dbe8',
-  muted: '#8b93ad',
-  faint: '#5b6488',
-  accent: '#6366f1',
-  crit: '#f0505f',
-  high: '#f0803c',
+  canvas: '#080d17',
+  panel: '#0f1728',
+  edge: '#273449',
+  ink: '#f1f5f9',
+  muted: '#94a3b8',
+  faint: '#5c6a80',
+  accent: '#3b82f6',
+  crit: '#ef4444',
+  high: '#f59e0b',
   med: '#eab308',
   low: '#38bdf8',
 }
 
-// Desaturated categorical series (indigo-led, Datadog-ish) for charts.
+// Professional blue-led categorical series (Datadog/Grafana feel).
 export const seriesColors = [
-  '#6366f1', // indigo
+  '#3b82f6', // blue
   '#38bdf8', // sky
   '#2dd4bf', // teal
+  '#f59e0b', // amber
   '#a78bfa', // violet
-  '#f0803c', // orange
-  '#eab308', // amber
-  '#4ade80', // green
-  '#f0505f', // red
-  '#e879a6', // pink
+  '#34d399', // emerald
+  '#f472b6', // pink
+  '#facc15', // yellow
+  '#fb7185', // rose
   '#94a3b8', // slate
 ]
 
-export const chartAxis = { grid: 'rgba(35,44,70,0.6)', tick: '#7c839c' }
+export const chartAxis = { grid: 'rgba(39,52,73,0.55)', tick: '#7c879b' }
 
 export const chartTooltip = {
-  backgroundColor: '#0f1428',
-  borderColor: '#2a3350',
+  backgroundColor: '#0b1220',
+  borderColor: '#2a3853',
   borderWidth: 1,
-  titleColor: '#e7eaf3',
-  bodyColor: '#c2c8d8',
+  titleColor: '#eef2f8',
+  bodyColor: '#c3ccdb',
   padding: 10,
   cornerRadius: 8,
   boxPadding: 4,

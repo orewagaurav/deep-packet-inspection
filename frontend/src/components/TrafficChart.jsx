@@ -24,7 +24,7 @@ export default function TrafficChart({ data = [], emptyHint }) {
         label: 'Bytes',
         data: data.map((d) => d.total_bytes),
         borderColor: palette.accent,
-        backgroundColor: 'rgba(99,102,241,0.14)',
+        backgroundColor: 'rgba(59,130,246,0.16)',
         fill: true,
         tension: 0.35,
         pointRadius: 0,

@@ -110,7 +110,7 @@ export default function Traffic() {
         label: 'Requests',
         data: domains.map((d) => d.request_count || d.count),
         backgroundColor: palette.accent,
-        hoverBackgroundColor: '#818cf8',
+        hoverBackgroundColor: '#60a5fa',
         borderRadius: 4,
         barThickness: 14,
       },
