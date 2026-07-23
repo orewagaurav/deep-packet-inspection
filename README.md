@@ -45,6 +45,9 @@ Every time you open a website or app, your device sends **packets** across the n
 
 ![Traffic Analytics](docs/screenshots/traffic.png)
 
+![World Map](docs/screenshots/worldmap.png)
+<div align="center"><sub>Destination IPs are geo-located and plotted live — dots sized by traffic volume.</sub></div>
+
 ---
 
 ## 🏗️ Architecture
@@ -93,6 +96,7 @@ flowchart LR
   - **DNS tunneling** — abnormally long, high-entropy DNS query names (Shannon entropy).
   - **Data exfiltration** — a source pushing an unusually large byte volume.
 - **⛔ Live block rules** — block by IP, application, or domain; the engine hot-reloads without restarting.
+- **🌍 Live world map** — every destination IP is geo-located and plotted on an interactive SVG map, updating in real time as traffic flows.
 - **📊 Real-time dashboard** — traffic volume, top domains/apps, blocked events, and security alerts, all updating live over WebSocket.
 - **⚡ Multi-threaded engine** — a load-balancer → fast-path thread pool with consistent 5-tuple hashing, so each connection is handled by one thread.
 - **🗄️ Time-series storage** — MongoDB with TTL retention and aggregation pipelines powering the analytics.
@@ -104,8 +108,8 @@ flowchart LR
 | Layer | Technologies |
 |---|---|
 | **DPI Engine** | C++17 · [libpcap](https://www.tcpdump.org/) (capture) · [libcurl](https://curl.se/libcurl/) (HTTP) · POSIX threads · CMake |
-| **Backend** | Node.js · Express · MongoDB (Atlas) · Socket.IO · Winston (logging) · Helmet (security headers) |
-| **Frontend** | React 19 · Vite · Tailwind CSS v4 · Chart.js · React Router · Socket.IO client |
+| **Backend** | Node.js · Express · MongoDB (Atlas) · Socket.IO · geoip-lite (GeoIP) · Winston · Helmet |
+| **Frontend** | React 19 · Vite · Tailwind CSS v4 · Chart.js · d3-geo + topojson (world map) · React Router · Socket.IO client |
 | **Deployment** | Render (backend) · Vercel (frontend) · MongoDB Atlas (database) |
 | **Testing** | Custom C++ unit/integration tests + a bash self-test suite |
 
@@ -245,8 +249,8 @@ DPI/
 - [x] UI-managed block rules with live engine hot-reload
 - [x] Real-time dashboard + deployed backend/frontend
 - [x] Throughput benchmark (packets/sec) + fast-path lock removal
+- [x] GeoIP enrichment + a live world map of destinations
 - [ ] Authentication + API keys (lock down the control plane)
-- [ ] GeoIP enrichment + a live world map of destinations
 
 ---
 
