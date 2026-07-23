@@ -42,4 +42,13 @@ export const getTrafficVolume = (params = {}) =>
 export const getBlockedAnalytics = (params = {}) =>
   api.get('/analytics/blocked-events', { params }).then((r) => r.data)
 
+// ---- Block rules (control plane) ----
+export const getRules = () => api.get('/rules').then((r) => r.data)
+
+export const createRule = (rule) => api.post('/rules', rule).then((r) => r.data)
+
+export const updateRule = (id, patch) => api.patch(`/rules/${id}`, patch).then((r) => r.data)
+
+export const deleteRule = (id) => api.delete(`/rules/${id}`).then((r) => r.data)
+
 export default api

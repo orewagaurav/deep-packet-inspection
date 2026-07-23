@@ -32,6 +32,7 @@
 #include "live_capture.h"
 #include "log_shipper.h"
 #include "threat_detector.h"
+#include "rule_sync.h"
 
 using namespace PacketAnalyzer;
 using namespace DPI;
@@ -191,6 +192,29 @@ public:
             if (sni.find(dom) != std::string::npos) return true;
         }
         return false;
+    }
+
+    // Atomically replace the entire blocklist (used by RuleSync in live mode,
+    // so the dashboard is the source of truth). New sets are built outside the
+    // lock; the swap under lock is O(1).
+    void replaceRules(const std::vector<std::string>& ips,
+                      const std::vector<std::string>& apps,
+                      const std::vector<std::string>& domains) {
+        std::unordered_set<uint32_t> new_ips;
+        std::unordered_set<AppType> new_apps;
+        for (const auto& ip : ips) new_ips.insert(parseIP(ip));
+        for (const auto& app : apps) {
+            for (int i = 0; i < static_cast<int>(AppType::APP_COUNT); i++) {
+                if (appTypeToString(static_cast<AppType>(i)) == app) {
+                    new_apps.insert(static_cast<AppType>(i));
+                    break;
+                }
+            }
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        blocked_ips_ = std::move(new_ips);
+        blocked_apps_ = std::move(new_apps);
+        blocked_domains_ = domains;
     }
 
 private:
@@ -586,12 +610,25 @@ public:
         createPipeline(log_shipper_.get());
         startPipeline();
 
+        // Start rule sync — the dashboard's blocklist is hot-reloaded into the
+        // engine (this makes the backend the source of truth in live mode).
+        rule_sync_ = std::make_unique<RuleSync>(
+            config_.backend_url,
+            [this](const std::vector<std::string>& ips,
+                   const std::vector<std::string>& apps,
+                   const std::vector<std::string>& domains) {
+                rules_.replaceRules(ips, apps, domains);
+            },
+            5000);
+        rule_sync_->start();
+
         // Open the live capture interface
         LiveCapture capture(interface);
         if (!capture.open()) {
             std::cerr << "[Engine] Failed to open interface: " << interface << "\n";
             std::cerr << "[Engine] Error: " << capture.lastError() << "\n";
             std::cerr << "[Engine] Hint: try running with sudo\n";
+            rule_sync_->stop();
             stopPipeline();
             log_shipper_->stop();
             return false;
@@ -633,6 +670,7 @@ public:
                           << "  Fwd: " << stats_.forwarded.load()
                           << "  Drop: " << stats_.dropped.load()
                           << "  Shipped: " << log_shipper_->sentCount()
+                          << "  RuleSyncs: " << rule_sync_->syncCount()
                           << "\n";
                 last_status = now;
             }
@@ -641,6 +679,9 @@ public:
         // ---- Graceful shutdown ----
         std::cout << "\n[Engine] Stopping live capture...\n";
         capture.close();
+
+        // Stop polling the backend for rules
+        rule_sync_->stop();
 
         // Wait for queues to drain
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -675,6 +716,7 @@ private:
     std::mutex json_log_mutex_;
     std::unique_ptr<LogShipper> log_shipper_;
     std::unique_ptr<ThreatDetector> detector_;
+    std::unique_ptr<RuleSync> rule_sync_;
 
     // =========================================================================
     // createPipeline() — build FP and LB threads

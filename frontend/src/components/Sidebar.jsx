@@ -6,6 +6,7 @@ const links = [
   { to: '/traffic', label: 'Traffic Analytics', icon: 'activity' },
   { to: '/blocked', label: 'Blocked Events', icon: 'ban' },
   { to: '/alerts', label: 'Security Alerts', icon: 'alert' },
+  { to: '/rules', label: 'Block Rules', icon: 'sliders' },
 ]
 
 export default function Sidebar() {

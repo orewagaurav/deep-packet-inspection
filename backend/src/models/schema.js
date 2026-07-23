@@ -90,6 +90,14 @@ async function initializeCollections() {
   await securityAlerts.createIndex({ alert_type: 1 }, { name: "idx_alert_type" });
   await securityAlerts.createIndex({ severity: 1 }, { name: "idx_severity" });
 
+  // --------------------------------------------------------------------------
+  // 5. rules — control-plane blocklist (no TTL; managed via the dashboard)
+  //    Unique on (type, value) so the same rule can't be added twice.
+  // --------------------------------------------------------------------------
+  const rules = db.collection("rules");
+  await rules.createIndex({ type: 1, value: 1 }, { unique: true, name: "idx_type_value" });
+  await rules.createIndex({ enabled: 1 }, { name: "idx_enabled" });
+
   console.log("[Schema] All collections and indexes initialized (TTL: 30 days)");
 }
 

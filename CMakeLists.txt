@@ -21,6 +21,7 @@ set(DPI_ENGINE_SOURCES
     src/live_capture.cpp
     src/log_shipper.cpp
     src/threat_detector.cpp
+    src/rule_sync.cpp
 )
 
 # Header files location

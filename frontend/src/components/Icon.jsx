@@ -68,6 +68,32 @@ const paths = {
     </>
   ),
   filter: <path d="M22 3H2l8 9.5V19l4 2v-8.5L22 3z" />,
+  sliders: (
+    <>
+      <line x1="4" y1="21" x2="4" y2="14" />
+      <line x1="4" y1="10" x2="4" y2="3" />
+      <line x1="12" y1="21" x2="12" y2="12" />
+      <line x1="12" y1="8" x2="12" y2="3" />
+      <line x1="20" y1="21" x2="20" y2="16" />
+      <line x1="20" y1="12" x2="20" y2="3" />
+      <line x1="1.5" y1="14" x2="6.5" y2="14" />
+      <line x1="9.5" y1="8" x2="14.5" y2="8" />
+      <line x1="17.5" y1="16" x2="22.5" y2="16" />
+    </>
+  ),
+  plus: (
+    <>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M3 6h18" />
+      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    </>
+  ),
 }
 
 export default function Icon({ name, className = 'w-5 h-5', strokeWidth = 1.75 }) {

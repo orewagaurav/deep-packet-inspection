@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import Traffic from './pages/Traffic'
 import Blocked from './pages/Blocked'
 import Alerts from './pages/Alerts'
+import Rules from './pages/Rules'
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
             <Route path="/traffic" element={<Traffic />} />
             <Route path="/blocked" element={<Blocked />} />
             <Route path="/alerts" element={<Alerts />} />
+            <Route path="/rules" element={<Rules />} />
           </Routes>
         </div>
       </main>

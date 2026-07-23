@@ -8,6 +8,7 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const dpiRoutes = require("./routes/dpi");
 const analyticsRoutes = require("./routes/analytics");
+const rulesRoutes = require("./routes/rules");
 const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
@@ -32,6 +33,7 @@ app.get("/health", (_req, res) => {
 // ---------------------------------------------------------------------------
 app.use("/", dpiRoutes);
 app.use("/analytics", analyticsRoutes);
+app.use("/rules", rulesRoutes);
 
 // ---------------------------------------------------------------------------
 // 404 handler
