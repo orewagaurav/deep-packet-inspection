@@ -12,6 +12,7 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <shared_mutex>
 #include <condition_variable>
 #include <queue>
 #include <vector>
@@ -161,13 +162,13 @@ struct FlowEntry {
 class Rules {
 public:
     void blockIP(const std::string& ip) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::unique_lock<std::shared_mutex> lock(mutex_);
         blocked_ips_.insert(parseIP(ip));
         std::cout << "[Rules] Blocked IP: " << ip << "\n";
     }
     
     void blockApp(const std::string& app) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::unique_lock<std::shared_mutex> lock(mutex_);
         for (int i = 0; i < static_cast<int>(AppType::APP_COUNT); i++) {
             if (appTypeToString(static_cast<AppType>(i)) == app) {
                 blocked_apps_.insert(static_cast<AppType>(i));
@@ -179,13 +180,13 @@ public:
     }
     
     void blockDomain(const std::string& domain) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::unique_lock<std::shared_mutex> lock(mutex_);
         blocked_domains_.push_back(domain);
         std::cout << "[Rules] Blocked domain: " << domain << "\n";
     }
     
     bool isBlocked(uint32_t src_ip, AppType app, const std::string& sni) const {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::shared_lock<std::shared_mutex> lock(mutex_);   // concurrent reads, no contention
         if (blocked_ips_.count(src_ip)) return true;
         if (blocked_apps_.count(app)) return true;
         for (const auto& dom : blocked_domains_) {
@@ -211,7 +212,7 @@ public:
                 }
             }
         }
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::unique_lock<std::shared_mutex> lock(mutex_);
         blocked_ips_ = std::move(new_ips);
         blocked_apps_ = std::move(new_apps);
         blocked_domains_ = domains;
@@ -228,7 +229,7 @@ private:
         return result | (octet << shift);
     }
     
-    mutable std::mutex mutex_;
+    mutable std::shared_mutex mutex_;   // shared for reads (isBlocked), unique for writes
     std::unordered_set<uint32_t> blocked_ips_;
     std::unordered_set<AppType> blocked_apps_;
     std::vector<std::string> blocked_domains_;
@@ -244,19 +245,8 @@ struct Stats {
     std::atomic<uint64_t> dropped{0};
     std::atomic<uint64_t> tcp_packets{0};
     std::atomic<uint64_t> udp_packets{0};
-    
-    // Per-app stats (protected by mutex)
-    std::mutex app_mutex;
-    std::unordered_map<AppType, uint64_t> app_counts;
-    std::unordered_map<std::string, AppType> detected_snis;
-    
-    void recordApp(AppType app, const std::string& sni) {
-        std::lock_guard<std::mutex> lock(app_mutex);
-        app_counts[app]++;
-        if (!sni.empty()) {
-            detected_snis[sni] = app;
-        }
-    }
+    // Note: per-application counts + detected SNIs are kept per FastPath thread
+    // (no lock in the hot path) and merged at report time. See FastPath.
 };
 
 // =============================================================================
@@ -286,6 +276,10 @@ public:
     
     uint64_t processed() const { return processed_; }
 
+    // Per-thread stats (owned by this FP's thread — no lock needed).
+    const std::unordered_map<AppType, uint64_t>& appCounts() const { return app_counts_; }
+    const std::unordered_map<std::string, AppType>& snis() const { return snis_; }
+
 private:
     int id_;
     Rules* rules_;
@@ -293,6 +287,8 @@ private:
     TSQueue<Packet>* output_queue_;
     TSQueue<Packet> input_queue_;
     std::unordered_map<FiveTuple, FlowEntry, FiveTupleHash> flows_;
+    std::unordered_map<AppType, uint64_t> app_counts_;   // per-thread app breakdown
+    std::unordered_map<std::string, AppType> snis_;      // per-thread detected SNIs
     std::ofstream* json_log_;
     std::mutex* json_log_mutex_;
     LogShipper* log_shipper_;
@@ -328,8 +324,9 @@ private:
                 flow.blocked = rules_->isBlocked(pkt.tuple.src_ip, flow.app_type, flow.sni);
             }
             
-            // Record stats
-            stats_->recordApp(flow.app_type, flow.sni);
+            // Record stats — per-thread, no lock
+            app_counts_[flow.app_type]++;
+            if (!flow.sni.empty()) snis_[flow.sni] = flow.app_type;
 
             // ---- Threat detection (heuristic IDS) ----
             if (detector_) {
@@ -492,7 +489,7 @@ public:
     struct Config {
         int num_lbs = 2;
         int fps_per_lb = 2;
-        std::string backend_url = "http://localhost:3000";
+        std::string backend_url = "http://localhost:8000";
     };
     
     DPIEngine(const Config& cfg) : config_(cfg) {
@@ -594,10 +591,97 @@ public:
         
         // Print report
         printReport();
-        
+
         return true;
     }
-    
+
+    // =========================================================================
+    // benchmark() — throughput test. Loads a capture into memory and replays it
+    // `repeat` times through the full pipeline (no disk output, no detector, no
+    // shipper), timing steady-state packets/sec and data rate.
+    // =========================================================================
+    bool benchmark(const std::string& input_file, int repeat) {
+        // Load all packets into memory so we measure processing, not disk I/O.
+        PcapReader reader;
+        if (!reader.open(input_file)) {
+            std::cerr << "Cannot open " << input_file << "\n";
+            return false;
+        }
+        std::vector<RawPacket> packets;
+        RawPacket raw;
+        while (reader.readNextPacket(raw)) packets.push_back(raw);
+        reader.close();
+        if (packets.empty()) {
+            std::cerr << "No packets in " << input_file << "\n";
+            return false;
+        }
+
+        // No JSON log / no detector / no shipper — isolate the DPI pipeline.
+        if (json_log_.is_open()) json_log_.close();
+        createPipeline(nullptr, /*with_detector=*/false);
+        startPipeline();
+
+        // Discard forwarded packets so the output queue never blocks.
+        std::atomic<bool> draining{true};
+        std::thread drainer([&]() {
+            while (draining.load() || output_queue_.size() > 0) {
+                output_queue_.pop(20);
+            }
+        });
+
+        const uint64_t dispatches = static_cast<uint64_t>(packets.size()) * repeat;
+        std::cout << "\n[Benchmark] Replaying " << packets.size() << " packets x "
+                  << repeat << " = " << dispatches << " through "
+                  << (config_.num_lbs * config_.fps_per_lb) << " FP threads...\n";
+
+        ParsedPacket parsed;
+        uint32_t pkt_id = 0;
+        auto t0 = std::chrono::steady_clock::now();
+
+        for (int r = 0; r < repeat; r++) {
+            for (const auto& p : packets) {
+                RawPacket copy = p;  // pipeline consumes the buffer (as in live capture)
+                dispatchRawPacket(copy, parsed, pkt_id);
+            }
+        }
+
+        // Wait until every accepted packet has been processed by an FP thread.
+        const uint64_t accepted = stats_.total_packets.load();
+        for (;;) {
+            uint64_t done = 0;
+            for (auto& fp : fps_) done += fp->processed();
+            if (done >= accepted) break;
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
+        }
+        auto t1 = std::chrono::steady_clock::now();
+
+        draining.store(false);
+        output_queue_.shutdown();
+        if (drainer.joinable()) drainer.join();
+        stopPipeline();
+
+        double secs = std::chrono::duration<double>(t1 - t0).count();
+        uint64_t pkts = stats_.total_packets.load();
+        uint64_t bytes = stats_.total_bytes.load();
+        double pps = secs > 0 ? pkts / secs : 0;
+        double mbps = secs > 0 ? (bytes / (1024.0 * 1024.0)) / secs : 0;
+        double gbit = secs > 0 ? (bytes * 8.0 / 1e9) / secs : 0;
+
+        std::cout << "\n";
+        std::cout << "+==================== BENCHMARK ====================+\n";
+        std::cout << "  Threads (LB x FP):   " << config_.num_lbs << " x "
+                  << config_.fps_per_lb << "  (" << fps_.size() << " fast paths)\n";
+        std::cout << "  Packets processed:   " << pkts << "\n";
+        std::cout << "  Bytes processed:     " << bytes << "\n";
+        std::cout << "  Elapsed:             " << std::fixed << std::setprecision(3) << secs << " s\n";
+        std::cout << "  Throughput:          " << std::setprecision(0) << pps
+                  << " pkt/s  (" << std::setprecision(2) << (pps / 1000.0) << " kpps)\n";
+        std::cout << "  Data rate:           " << std::setprecision(1) << mbps
+                  << " MB/s  (" << std::setprecision(2) << gbit << " Gbit/s)\n";
+        std::cout << "+===================================================+\n";
+        return true;
+    }
+
     // =========================================================================
     // captureLive() — LIVE CAPTURE MODE (new)
     // =========================================================================
@@ -721,14 +805,15 @@ private:
     // =========================================================================
     // createPipeline() — build FP and LB threads
     // =========================================================================
-    void createPipeline(LogShipper* shipper) {
+    void createPipeline(LogShipper* shipper, bool with_detector = true) {
         int total_fps = config_.num_lbs * config_.fps_per_lb;
 
         fps_.clear();
         lbs_.clear();
 
-        // Shared threat detector (alerts shipped via the same backend connection)
-        detector_ = std::make_unique<ThreatDetector>(shipper);
+        // Shared threat detector (alerts shipped via the same backend connection).
+        // Skipped in benchmark mode to measure the core DPI pipeline in isolation.
+        detector_ = with_detector ? std::make_unique<ThreatDetector>(shipper) : nullptr;
 
         // Create FP threads
         for (int i = 0; i < total_fps; i++) {
@@ -736,7 +821,7 @@ private:
                 i, &rules_, &stats_, &output_queue_,
                 json_log_.is_open() ? &json_log_ : nullptr,
                 &json_log_mutex_,
-                shipper, detector_.get()));
+                shipper, detector_ ? detector_.get() : nullptr));
         }
         
         // Create LB threads, each managing a subset of FPs
@@ -857,10 +942,16 @@ private:
         std::cout << "║                   APPLICATION BREAKDOWN                       ║\n";
         std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
         
-        std::lock_guard<std::mutex> lock(stats_.app_mutex);
-        
+        // Merge per-thread app stats (built lock-free by each FastPath).
+        std::unordered_map<AppType, uint64_t> app_counts;
+        std::unordered_map<std::string, AppType> detected_snis;
+        for (const auto& fp : fps_) {
+            for (const auto& [app, c] : fp->appCounts()) app_counts[app] += c;
+            for (const auto& [sni, app] : fp->snis()) detected_snis[sni] = app;
+        }
+
         std::vector<std::pair<AppType, uint64_t>> sorted_apps(
-            stats_.app_counts.begin(), stats_.app_counts.end());
+            app_counts.begin(), app_counts.end());
         std::sort(sorted_apps.begin(), sorted_apps.end(),
                   [](const auto& a, const auto& b) { return a.second > b.second; });
         
@@ -879,9 +970,9 @@ private:
         std::cout << "╚══════════════════════════════════════════════════════════════╝\n";
         
         // Detected SNIs
-        if (!stats_.detected_snis.empty()) {
+        if (!detected_snis.empty()) {
             std::cout << "\n[Detected Domains/SNIs]\n";
-            for (const auto& [sni, app] : stats_.detected_snis) {
+            for (const auto& [sni, app] : detected_snis) {
                 std::cout << "  - " << sni << " -> " << appTypeToString(app) << "\n";
             }
         }
@@ -911,11 +1002,13 @@ Options:
   --block-domain <dom>    Block domain (substring match)
   --lbs <n>               Number of load balancer threads (default: 2)
   --fps <n>               FP threads per LB (default: 2)
+  --bench <n>             Benchmark: replay <input.pcap> n times, report pkt/s
 
 Examples:
   )" << prog << R"( capture.pcap filtered.pcap --block-app YouTube
-  sudo )" << prog << R"( --interface en0
-  sudo )" << prog << R"( --interface en0 --backend-url http://my-server:3000 --block-ip 10.0.0.50
+  )" << prog << R"( test_dpi.pcap --bench 50000 --lbs 4 --fps 4
+  sudo )" << prog << R"( --interface en0 --backend-url http://localhost:8000
+  sudo )" << prog << R"( --interface en0 --backend-url http://my-server:8000 --block-ip 10.0.0.50
 )";
 }
 
@@ -930,6 +1023,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> block_ips, block_apps, block_domains;
     std::string interface;
     bool list_interfaces = false;
+    int bench_repeat = 0;
     std::vector<std::string> positional;
 
     for (int i = 1; i < argc; i++) {
@@ -951,6 +1045,8 @@ int main(int argc, char* argv[]) {
             cfg.num_lbs = std::stoi(argv[++i]);
         } else if (arg == "--fps" && i + 1 < argc) {
             cfg.fps_per_lb = std::stoi(argv[++i]);
+        } else if (arg == "--bench" && i + 1 < argc) {
+            bench_repeat = std::stoi(argv[++i]);
         } else if (arg == "--help" || arg == "-h") {
             printUsage(argv[0]);
             return 0;
@@ -986,7 +1082,12 @@ int main(int argc, char* argv[]) {
     for (const auto& app : block_apps) engine.blockApp(app);
     for (const auto& dom : block_domains) engine.blockDomain(dom);
 
-    if (!interface.empty()) {
+    if (bench_repeat > 0 && !positional.empty()) {
+        // ═══════ BENCHMARK MODE ═══════
+        if (!engine.benchmark(positional[0], bench_repeat)) {
+            return 1;
+        }
+    } else if (!interface.empty()) {
         // ═══════ LIVE CAPTURE MODE ═══════
         if (!engine.captureLive(interface)) {
             return 1;

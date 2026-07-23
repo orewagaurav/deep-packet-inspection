@@ -111,6 +111,25 @@ flowchart LR
 
 ---
 
+## ⚡ Performance
+
+The engine has a built-in benchmark mode that replays a capture through the **full pipeline** (parse → SNI classify → rule match) and reports throughput:
+
+```bash
+./build/dpi_engine test_dpi.pcap --bench 100000
+```
+
+Measured on an **Apple M1** with small 74-byte-average packets (the worst case for per-packet rate):
+
+| Metric | Value |
+|---|---|
+| **Throughput** | **~435,000 packets/sec** |
+| Data rate | ~0.26 Gbit/s at 74 B · **~5 Gbit/s** at a typical 1500 B MTU |
+
+The benchmark also surfaced a nice profiling insight: throughput is bounded by the **single capture/dispatch thread** (per-packet buffer copy + protocol parsing), not the fast-path pool. Per-packet shared-state contention was removed along the way (per-thread stat counters + a `shared_mutex` for concurrent rule lookups); the next scaling step is parallelizing capture/parse or a zero-copy packet pool.
+
+---
+
 ## 🚀 Getting started
 
 ### Prerequisites
@@ -225,8 +244,8 @@ DPI/
 - [x] Real threat detection (port scan, DNS tunnel, data exfil)
 - [x] UI-managed block rules with live engine hot-reload
 - [x] Real-time dashboard + deployed backend/frontend
+- [x] Throughput benchmark (packets/sec) + fast-path lock removal
 - [ ] Authentication + API keys (lock down the control plane)
-- [ ] Throughput benchmark (packets/sec) in the docs
 - [ ] GeoIP enrichment + a live world map of destinations
 
 ---
